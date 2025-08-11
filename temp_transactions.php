@@ -1,0 +1,352 @@
+<?php
+require_once '../config/config.php';
+
+// Check if user is logged in
+check_user_login();
+
+// Initialize database connections
+$database = new Database();
+$db = $database->getConnection();
+
+// Get user info
+$user = new User($db);
+$user->getById($_SESSION['user_id']);
+
+// Get user accounts for filtering
+$account = new Account($db);
+$user_accounts = $account->getUserAccounts($_SESSION['user_id']);
+
+// Pagination settings
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$records_per_page = 20;
+
+// Filter settings
+$account_filter = $_GET['account_id'] ?? '';
+$type_filter = $_GET['type'] ?? '';
+$date_from = $_GET['date_from'] ?? '';
+$date_to = $_GET['date_to'] ?? '';
+
+// Get transactions
+$transaction = new Transaction($db);
+$transactions = $transaction->getUserTransactions($_SESSION['user_id'], $page, $records_per_page, $account_filter, $type_filter, $date_from, $date_to);
+
+// Get total count for pagination
+$total_transactions = $transaction->getUserTransactionCount($_SESSION['user_id'], $account_filter, $type_filter, $date_from, $date_to);
+$total_pages = ceil($total_transactions / $records_per_page);
+
+// Calculate transaction summary
+$summary = $transaction->getUserTransactionSummary($_SESSION['user_id'], $account_filter, $date_from, $date_to);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction History - Daffodil Bank</title>
+    <link href="assets/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/fontawesome.min.css" rel="stylesheet">
+    <link href="assets/fonts/inter.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            color: #2d3748;
+            line-height: 1.6;
+        }
+        
+        /* Modern Sidebar */
+        .sidebar {
+            background: linear-gradient(180deg, #1a202c 0%, #2d3748 100%);
+            min-height: 100vh;
+            color: white;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            opacity: 0.1;
+        }
+        
+        .sidebar-header {
+            padding: 2rem 1.5rem;
+            position: relative;
+            z-index: 2;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .sidebar-brand {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .user-welcome {
+            font-size: 0.9rem;
+            color: #a0aec0;
+            font-weight: 500;
+        }
+        
+        .sidebar-nav {
+            padding: 1rem 0;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8) !important;
+            border-radius: 12px;
+            margin: 4px 1rem;
+            padding: 12px 16px !important;
+            transition: all 0.3s ease;
+            position: relative;
+            font-weight: 500;
+            border: none;
+            background: none;
+        }
+        
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+            transform: translateX(5px);
+        }
+        
+        .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            transform: translateX(5px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .nav-link i {
+            width: 20px;
+            margin-right: 12px;
+            text-align: center;
+        }
+        
+        /* Main Content Area */
+        .main-content {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            padding: 0;
+        }
+        
+        .content-header {
+            background: white;
+            padding: 2rem 2rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 0.5rem;
+        }
+        
+        .page-subtitle {
+            color: #718096;
+            font-size: 1rem;
+            margin: 0;
+        }
+        
+        .content-body {
+            padding: 2rem;
+        }
+        
+        /* Modern Cards */
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            background: white;
+            overflow: hidden;
+        }
+        
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+        
+        .card-header {
+            background: none;
+            border: none;
+            padding: 1.5rem 1.5rem 0;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+        }
+        
+        /* Balance Cards */
+        .balance-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .balance-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        }
+        
+        .balance-amount {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin: 0;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .balance-label {
+            font-size: 1rem;
+            opacity: 0.9;
+            position: relative;
+            z-index: 2;
+        }
+        
+        /* Account Cards */
+        .account-card {
+            border-left: 4px solid transparent;
+            border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
+            position: relative;
+            margin-bottom: 1rem;
+        }
+        
+        .account-type {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 0.25rem;
+        }
+        
+        .account-number {
+            font-family: 'Monaco', 'Menlo', monospace;
+            color: #718096;
+            font-size: 0.9rem;
+        }
+        
+        .account-balance {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #48bb78;
+            margin: 0;
+        }
+        
+        .balance-display {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #48bb78;
+        }
+        
+        /* Status Badges */
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .status-badge.success {
+            background: #c6f6d5;
+            color: #2f855a;
+        }
+        
+        .status-badge.warning {
+            background: #faf089;
+            color: #975a16;
+        }
+        
+        .status-badge.danger {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        /* Modern Buttons */
+        .btn-modern {
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-modern::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn-modern:hover::before {
+            left: 100%;
+        }
+        
+        .btn-primary.btn-modern {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary.btn-modern:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: -100%;
+                top: 0;
+                width: 280px;
+                z-index: 1000;
+                transition: left 0.3s ease;
+            }
+            
+            .sidebar.show {
+                left: 0;
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .page-title {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
